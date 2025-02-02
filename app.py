@@ -109,7 +109,7 @@ async def get_chatbot_response(messages: List[Dict]) -> Optional[str]:
     """Get response from OpenAI API with error handling"""
     try:
         response = await openai.ChatCompletion.acreate(
-            model="gpt-4",
+            model="gpt-3.5",
             messages=messages,
             max_tokens=800,
             stream=True
