@@ -4,10 +4,8 @@ from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import FAISS
 from dotenv import load_dotenv
 import os
-import hmac
-import traceback
-from typing import Optional, List, Dict
 import logging
+from typing import Optional, List, Dict
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,12 +19,8 @@ def load_environment_variables() -> bool:
     """Load and validate environment variables"""
     try:
         load_dotenv()
-        required_vars = ['ADMIN_USERNAME', 'ADMIN_PASSWORD', 'OPENAI_API_KEY']
-        missing_vars = [var for var in required_vars if not os.getenv(var)]
-        
-        if missing_vars:
-            raise ChatbotError(f"Missing required environment variables: {', '.join(missing_vars)}")
-        
+        if not os.getenv('OPENAI_API_KEY'):
+            raise ChatbotError("Missing required environment variable: OPENAI_API_KEY")
         return True
     except Exception as e:
         logger.error(f"Error loading environment variables: {str(e)}")
@@ -42,50 +36,6 @@ def initialize_faiss() -> Optional[FAISS]:
         logger.error(f"Error initializing FAISS: {str(e)}")
         st.error("Error initializing search system. Please contact administrator.")
         return None
-
-def check_password() -> bool:
-    """Secure password checking with error handling"""
-    try:
-        ADMIN_USERNAME = os.getenv('ADMIN_USERNAME')
-        ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD')
-
-        def password_entered():
-            if (ADMIN_USERNAME is None or ADMIN_PASSWORD is None):
-                raise ChatbotError("Authentication credentials not properly configured")
-            
-            try:
-                username_valid = hmac.compare_digest(st.session_state["username"], ADMIN_USERNAME)
-                password_valid = hmac.compare_digest(st.session_state["password"], ADMIN_PASSWORD)
-                
-                st.session_state["password_correct"] = username_valid and password_valid
-                
-                if st.session_state["password_correct"]:
-                    del st.session_state["password"]
-                    del st.session_state["username"]
-            except KeyError:
-                st.session_state["password_correct"] = False
-                logger.warning("Login attempt with missing credentials")
-
-        if "password_correct" not in st.session_state:
-            st.text_input("Username", key="username")
-            st.text_input("Password", type="password", key="password")
-            st.button("Login", on_click=password_entered)
-            return False
-        
-        elif st.session_state["password_correct"]:
-            return True
-        
-        else:
-            st.text_input("Username", key="username")
-            st.text_input("Password", type="password", key="password")
-            st.button("Login", on_click=password_entered)
-            st.error("😕 User not authorized. Please check your username and password.")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Authentication error: {str(e)}")
-        st.error("Authentication system error. Please contact administrator.")
-        return False
 
 def get_conversation_history(messages: List[Dict], limit: int = 5) -> List[Dict]:
     """Safely retrieve conversation history"""
@@ -105,29 +55,6 @@ def process_query(faiss_db: FAISS, query: str) -> Optional[str]:
         st.error("Error processing your query. Please try again.")
         return None
 
-async def get_chatbot_response(messages: List[Dict]) -> Optional[str]:
-    """Get response from OpenAI API with error handling"""
-    try:
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-3.5",
-            messages=messages,
-            max_tokens=800,
-            stream=True
-        )
-        return response
-    except openai.error.RateLimitError:
-        st.error("Rate limit exceeded. Please try again later.")
-        logger.warning("OpenAI rate limit exceeded")
-        return None
-    except openai.error.AuthenticationError:
-        st.error("API authentication failed. Please contact administrator.")
-        logger.error("OpenAI authentication failed")
-        return None
-    except Exception as e:
-        st.error("Error generating response. Please try again.")
-        logger.error(f"OpenAI API error: {str(e)}")
-        return None
-
 def main():
     """Main application with error handling"""
     try:
@@ -143,18 +70,9 @@ def main():
         if faiss_db is None:
             return
 
-        # Check authentication
-        if not check_password():
-            return
-
         # Streamlit UI setup
         st.set_page_config(page_title="ERP Help Chatbot")
         st.title("🤖 ERP Help Chatbot")
-
-        # Logout button
-        if st.sidebar.button("Logout"):
-            st.session_state["password_correct"] = False
-            st.experimental_rerun()
 
         # Initialize chat history
         if "messages" not in st.session_state:
@@ -215,7 +133,7 @@ def main():
                     full_response = ""
                     
                     response = openai.ChatCompletion.create(
-                        model="gpt-4",
+                        model="gpt-3.5-turbo",
                         messages=messages,
                         max_tokens=800,
                         stream=True
@@ -234,7 +152,7 @@ def main():
                 st.error("Error generating response. Please try again.")
 
     except Exception as e:
-        logger.error(f"Application error: {str(e)}\n{traceback.format_exc()}")
+        logger.error(f"Application error: {str(e)}")
         st.error("An unexpected error occurred. Please contact administrator.")
 
 if __name__ == "__main__":
